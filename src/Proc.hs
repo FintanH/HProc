@@ -3,16 +3,17 @@
 
 module Proc where
 
-import           Control.Monad    (filterM)
-import           Data.Char        (isDigit)
-import           Data.List.Split  (splitOn)
-import qualified Data.Map         as M
-import           Data.Maybe       (fromMaybe)
-import           Data.Monoid      ((<>))
-import qualified Data.Text        as T
-import           System.Directory (doesDirectoryExist, listDirectory)
+import           Control.Applicative (liftA2)
+import           Control.Monad       (filterM)
+import           Data.Char           (isDigit)
+import           Data.List.Split     (splitOn)
+import qualified Data.Map            as M
+import           Data.Maybe          (catMaybes, fromMaybe)
+import           Data.Monoid         ((<>))
+import qualified Data.Text           as T
+import           Safe                (atMay, headMay)
+import           System.Directory    (doesDirectoryExist, listDirectory)
 import           Text.Printf
-
 
 newtype PID = PID String
 type ProcInfo = M.Map T.Text [T.Text]
@@ -61,7 +62,8 @@ getUsers :: IO UserInfo
 getUsers = do
   let userPath = "/etc/passwd"
   userList <- removeCommentLines . groupData . T.strip . T.pack <$> readFile userPath
-  return . M.fromList . map (\u -> (u !! 2, u !! 0)) $ userList
+
+  return . M.fromList . catMaybes . map (\u -> liftA2 (,) (atMay u 2) (atMay u 0)) $ userList
   where
     groupData = map (T.splitOn ":") . T.lines
     removeCommentLines = filter (not . null) . map (filter (not . T.isPrefixOf "#"))
@@ -69,12 +71,12 @@ getUsers = do
 createProcess :: FilePath -> IO ProcessData
 createProcess pid = do
   pData <- getProcessData pid
-  let name = head <$> M.lookup "Name:" pData :: Maybe T.Text
-  let userId = head <$> M.lookup "Uid:" pData :: Maybe T.Text
-  let state = head <$> M.lookup "State:" pData :: Maybe T.Text
-  let rss = head <$> M.lookup "VMRSS:" pData :: Maybe T.Text
+  let name = headMay =<< M.lookup "Name:" pData :: Maybe T.Text
+  let userId = headMay =<< M.lookup "Uid:" pData :: Maybe T.Text
+  let state = headMay =<< M.lookup "State:" pData :: Maybe T.Text
+  let rss = headMay =<< M.lookup "VMRSS:" pData :: Maybe T.Text
 
   userInfo <- getUsers
-  let user = userId >>= \ui -> M.lookup ui userInfo
+  let user = userId >>= flip M.lookup userInfo
 
   return ProcessData {..}
